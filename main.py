@@ -2,14 +2,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 import requests
 from deep_translator import GoogleTranslator
+import urllib.parse
+import time
 
 app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "name": "וואן פיס - תרגום לעברית",
-    "description": "מתרגם אוטומטית - גרסה מתקדמת הכוללת תיקון קידוד גולמי (Raw Path) לאנימה ולסדרות רגילות",
+    "description": "גרסה יציבה: כולל תיקוני URL, מערכת Fallback למניעת קריסות 500, וייצוב תרגום מול גוגל.",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -18,17 +20,12 @@ MANIFEST = {
 def get_manifest():
     return MANIFEST
 
-# תופס כל בקשת כתוביות, לא משנה מה אורכה
 @app.get("/subtitles/{path:path}")
 def get_subtitles(request: Request):
     try:
-        # פריצת הדרך: שאיבת הכתובת הגולמית בדיוק כפי שסטרימיו שלח, ללא פענוח אוטומטי של התווים
         raw_path = request.scope.get("raw_path", b"").decode("utf-8")
-        
-        # הרכבת הכתובת להעברה למאגר הרשמי של סטרימיו
         os_url = f"https://opensubtitles-v3.strem.io{raw_path}"
         
-        # הוספת זהות של סטרימיו כדי למנוע חסימת בוטים
         headers = {"User-Agent": "Stremio/4.4"}
         response = requests.get(os_url, headers=headers, timeout=10)
         
@@ -40,7 +37,6 @@ def get_subtitles(request: Request):
         
         english_sub_url = None
         
-        # חיפוש מקור אנגלי
         for sub in subtitles_list:
             if sub.get("lang") == "eng":
                 english_sub_url = sub.get("url")
@@ -52,7 +48,6 @@ def get_subtitles(request: Request):
         encoded_url = requests.utils.quote(english_sub_url)
         base_url = str(request.base_url).rstrip('/')
         
-        # חילוץ מזהה פשוט כדי שסטרימיו יציג את הלחצן
         stream_id = "auto"
         if "tt" in raw_path:
             stream_id = "series"
@@ -68,23 +63,28 @@ def get_subtitles(request: Request):
                 }
             ]
         }
-    except Exception as e:
-        print(f"Server Error: {e}")
+    except Exception:
         return {"subtitles": []}
 
 @app.get("/translate-srt")
 def translate_srt(url: str):
+    original_srt_text = ""
     try:
-        # שליפת קובץ ה-SRT וקידוד נכון למונע ג'יבריש
-        srt_response = requests.get(url, timeout=10)
+        # התיקון הקריטי: שחזור הכתובת לפורמט תקין לפני ההורדה למניעת שגיאת 500
+        clean_url = urllib.parse.unquote(url)
+        
+        srt_response = requests.get(clean_url, timeout=10)
         srt_response.encoding = 'utf-8' 
-        srt_text = srt_response.text
+        original_srt_text = srt_response.text
         
-        translated_text = translate_srt_content(srt_text)
-        
+        translated_text = translate_srt_content(original_srt_text)
         return Response(content=translated_text, media_type="text/srt; charset=utf-8")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Translation logic crashed: {e}")
+        # רשת הביטחון: אם גוגל קרס, נחזיר את הכתובית באנגלית במקום שסטרימיו יקרוס
+        if original_srt_text:
+            return Response(content=original_srt_text, media_type="text/srt; charset=utf-8")
+        return Response(content="1\n00:00:01,000 --> 00:00:05,000\n[System Error: Subtitles Unavailable]", media_type="text/srt; charset=utf-8")
 
 def translate_srt_content(srt_text):
     translator = GoogleTranslator(source='en', target='he')
@@ -100,7 +100,6 @@ def translate_srt_content(srt_text):
         text_lines_indices.append(idx)
         text_to_translate.append(line)
     
-    # הקטנת קבוצות התרגום ל-40 כדי להבטיח יציבות ולא לקרוס מול גוגל
     batch_size = 40 
     for i in range(0, len(text_to_translate), batch_size):
         batch = text_to_translate[i:i+batch_size]
@@ -111,6 +110,9 @@ def translate_srt_content(srt_text):
                     actual_idx = text_lines_indices[i + j]
                     lines[actual_idx] = translated_text
         except Exception:
+            # אם הייתה חסימה זמנית בתרגום קבוצה מסוימת, נדלג עליה (תישאר באנגלית) 
             pass
+        # מרווח נשימה קטן כדי שגוגל לא יחסום את השרת על הצפות
+        time.sleep(0.1) 
             
     return '\n'.join(lines)
