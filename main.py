@@ -9,9 +9,9 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "name": "וואן פיס - תרגום לעברית",
-    "description": "גרסה יציבה: כולל תיקוני URL, מערכת Fallback למניעת קריסות 500, וייצוב תרגום מול גוגל.",
+    "description": "גרסה 1.0.6: תיקון קידוד שפה גלובלי (iw) - עברית עובדת!",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -70,7 +70,6 @@ def get_subtitles(request: Request):
 def translate_srt(url: str):
     original_srt_text = ""
     try:
-        # התיקון הקריטי: שחזור הכתובת לפורמט תקין לפני ההורדה למניעת שגיאת 500
         clean_url = urllib.parse.unquote(url)
         
         srt_response = requests.get(clean_url, timeout=10)
@@ -81,13 +80,13 @@ def translate_srt(url: str):
         return Response(content=translated_text, media_type="text/srt; charset=utf-8")
     except Exception as e:
         print(f"Translation logic crashed: {e}")
-        # רשת הביטחון: אם גוגל קרס, נחזיר את הכתובית באנגלית במקום שסטרימיו יקרוס
         if original_srt_text:
             return Response(content=original_srt_text, media_type="text/srt; charset=utf-8")
         return Response(content="1\n00:00:01,000 --> 00:00:05,000\n[System Error: Subtitles Unavailable]", media_type="text/srt; charset=utf-8")
 
 def translate_srt_content(srt_text):
-    translator = GoogleTranslator(source='en', target='he')
+    # התיקון הקריטי כאן: iw במקום he
+    translator = GoogleTranslator(source='en', target='iw')
     lines = srt_text.splitlines()
     
     text_lines_indices = []
@@ -110,9 +109,7 @@ def translate_srt_content(srt_text):
                     actual_idx = text_lines_indices[i + j]
                     lines[actual_idx] = translated_text
         except Exception:
-            # אם הייתה חסימה זמנית בתרגום קבוצה מסוימת, נדלג עליה (תישאר באנגלית) 
             pass
-        # מרווח נשימה קטן כדי שגוגל לא יחסום את השרת על הצפות
         time.sleep(0.1) 
             
     return '\n'.join(lines)
