@@ -8,9 +8,9 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.9",
+    "version": "1.1.0",
     "name": "וואן פיס - תרגום לעברית (אולטימטיבי)",
-    "description": "גרסה 1.0.9: Meta-Addon. תמיכה משולבת בסדרות רגילות ובחילוץ כתוביות מקבצי MKV של אנימה.",
+    "description": "גרסה 1.1.0: קוד מתוקן עם כתובת מדויקת לחילוץ כתוביות MKV ממאגרי אנימה",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -18,7 +18,7 @@ MANIFEST = {
 # רשימת ספקי הכתוביות שלנו (הדלתות שהשרת דופק עליהן)
 PROVIDERS = [
     "https://opensubtitles-v3.strem.io",      # ספק 1: סדרות וסרטים רגילים 
-    "https://stremio-animetosho.strem.fun"    # ספק 2: מחלץ כתוביות מקבצי MKV של אנימה
+    "https://animetosho.strem.fun"            # ספק 2: הכתובת המתוקנת! חולץ הכתוביות מקבצי MKV
 ]
 
 @app.get("/manifest.json")
@@ -31,14 +31,15 @@ def get_subtitles(request: Request):
         raw_path = request.scope.get("raw_path", b"").decode("utf-8")
         english_sub_url = None
         
-        # לולאה שרצה על כל ספקי הכתוביות עד שהיא מוצאת אנגלית
+        # לולאה שרצה על ספקי הכתוביות שלנו
         for provider in PROVIDERS:
             os_url = f"{provider}{raw_path}"
             print(f"DEBUG: Trying provider -> {os_url}")
             
             try:
                 headers = {"User-Agent": "Stremio/4.4"}
-                response = requests.get(os_url, headers=headers, timeout=7)
+                # נתנו קצת יותר זמן המתנה (10 שניות) לשרתים חיצוניים
+                response = requests.get(os_url, headers=headers, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -53,7 +54,6 @@ def get_subtitles(request: Request):
             except Exception as e:
                 print(f"DEBUG: Provider {provider} failed: {e}")
             
-            # אם מצאנו כתובית אצל הספק הנוכחי, אין טעם לבדוק את הבאים
             if english_sub_url:
                 break
         
