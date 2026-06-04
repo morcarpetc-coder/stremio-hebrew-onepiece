@@ -8,12 +8,18 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.8",
-    "name": "וואן פיס - תרגום לעברית",
-    "description": "גרסה 1.0.8: מצב טורבו - תרגום מהיר בבלוקים למניעת ניתוקי Timeout מול סטרימיו",
+    "version": "1.0.9",
+    "name": "וואן פיס - תרגום לעברית (אולטימטיבי)",
+    "description": "גרסה 1.0.9: Meta-Addon. תמיכה משולבת בסדרות רגילות ובחילוץ כתוביות מקבצי MKV של אנימה.",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
+
+# רשימת ספקי הכתוביות שלנו (הדלתות שהשרת דופק עליהן)
+PROVIDERS = [
+    "https://opensubtitles-v3.strem.io",      # ספק 1: סדרות וסרטים רגילים 
+    "https://stremio-animetosho.strem.fun"    # ספק 2: מחלץ כתוביות מקבצי MKV של אנימה
+]
 
 @app.get("/manifest.json")
 def get_manifest():
@@ -23,28 +29,36 @@ def get_manifest():
 def get_subtitles(request: Request):
     try:
         raw_path = request.scope.get("raw_path", b"").decode("utf-8")
-        os_url = f"https://opensubtitles-v3.strem.io{raw_path}"
-        
-        print(f"DEBUG: Requesting -> {os_url}")
-        
-        headers = {"User-Agent": "Stremio/4.4"}
-        response = requests.get(os_url, headers=headers, timeout=10)
-        
-        if response.status_code != 200:
-            return {"subtitles": []}
-            
-        data = response.json()
-        subtitles_list = data.get("subtitles", [])
-        
         english_sub_url = None
-        for sub in subtitles_list:
-            lang = sub.get("lang", "").lower()
-            if lang == "eng" or lang == "en":
-                english_sub_url = sub.get("url")
+        
+        # לולאה שרצה על כל ספקי הכתוביות עד שהיא מוצאת אנגלית
+        for provider in PROVIDERS:
+            os_url = f"{provider}{raw_path}"
+            print(f"DEBUG: Trying provider -> {os_url}")
+            
+            try:
+                headers = {"User-Agent": "Stremio/4.4"}
+                response = requests.get(os_url, headers=headers, timeout=7)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    subtitles_list = data.get("subtitles", [])
+                    
+                    for sub in subtitles_list:
+                        lang = sub.get("lang", "").lower()
+                        if lang == "eng" or lang == "en":
+                            english_sub_url = sub.get("url")
+                            print(f"DEBUG: Success! Found English subtitle at {provider}")
+                            break
+            except Exception as e:
+                print(f"DEBUG: Provider {provider} failed: {e}")
+            
+            # אם מצאנו כתובית אצל הספק הנוכחי, אין טעם לבדוק את הבאים
+            if english_sub_url:
                 break
         
         if not english_sub_url:
-            print("DEBUG: No English subtitle found.")
+            print("DEBUG: No English subtitle found in any provider.")
             return {"subtitles": []}
             
         encoded_url = requests.utils.quote(english_sub_url)
@@ -70,7 +84,7 @@ def get_subtitles(request: Request):
             ]
         }
     except Exception as e:
-        print(f"DEBUG: Server crashed: {e}")
+        print(f"DEBUG: Server crashed in get_subtitles: {e}")
         return {"subtitles": []}
 
 @app.get("/translate-srt")
@@ -101,7 +115,6 @@ def translate_srt_content(srt_text):
     text_lines_indices = []
     text_to_translate = []
     
-    # חילוץ הטקסט בלבד
     for idx, line in enumerate(lines):
         clean_line = line.strip()
         if not clean_line or clean_line.isdigit() or "-->" in clean_line:
@@ -109,19 +122,15 @@ def translate_srt_content(srt_text):
         text_lines_indices.append(idx)
         text_to_translate.append(line)
     
-    # שיטת הטורבו: שליחת גושים גדולים שלמים במכה אחת במקום שורות בודדות
     chunk_size = 100 
     for i in range(0, len(text_to_translate), chunk_size):
         batch = text_to_translate[i:i+chunk_size]
-        # איחוד השורות לטקסט אחד ארוך מופרד בירידת שורה
         combined_text = '\n'.join(batch)
         
         try:
-            # בקשה אחת בודדת לגוגל עבור 100 שורות!
             translated_combined = translator.translate(combined_text)
             translated_batch = translated_combined.split('\n')
             
-            # החזרת הטקסט למקום המדויק
             for j in range(min(len(batch), len(translated_batch))):
                 actual_idx = text_lines_indices[i + j]
                 lines[actual_idx] = translated_batch[j].strip()
