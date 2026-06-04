@@ -7,9 +7,9 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "name": "וואן פיס - תרגום לעברית",
-    "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית עבור וואן פיס וסדרות אחרות",
+    "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -18,11 +18,14 @@ MANIFEST = {
 def get_manifest():
     return MANIFEST
 
-@app.get("/subtitles/{obj_type}/{stream_id}.json")
-@app.get("/subtitles/{obj_type}/{stream_id}/{extra:path}")
-def get_subtitles(obj_type: str, stream_id: str, request: Request, extra: str = ""):
+# כאן אנחנו תופסים את כל הנתיב הארוך שסטרימיו שולח במכה אחת
+@app.get("/subtitles/{rest_of_path:path}")
+def get_subtitles(rest_of_path: str, request: Request):
     try:
-        os_url = f"https://opensubtitles-v3.strem.io/subtitles/{obj_type}/{stream_id}.json"
+        # אנחנו לוקחים את הנתיב המדויק (כולל ה-Hash והשם) ומעבירים למאגר
+        full_path = request.url.path
+        os_url = f"https://opensubtitles-v3.strem.io{full_path}"
+        
         response = requests.get(os_url, timeout=5)
         data = response.json()
         
@@ -39,6 +42,10 @@ def get_subtitles(obj_type: str, stream_id: str, request: Request, extra: str = 
             
         encoded_url = requests.utils.quote(english_sub_url)
         base_url = str(request.base_url).rstrip('/')
+        
+        # חילוץ מזהה כדי שסטרימיו לא יתבלבל
+        parts = rest_of_path.split('/')
+        stream_id = parts[1] if len(parts) > 1 else "vid"
         
         return {
             "subtitles": [
