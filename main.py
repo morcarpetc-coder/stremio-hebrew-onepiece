@@ -7,7 +7,7 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "name": "וואן פיס - תרגום לעברית",
     "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית עבור וואן פיס וסדרות אחרות",
     "resources": ["subtitles"],
@@ -19,7 +19,8 @@ def get_manifest():
     return MANIFEST
 
 @app.get("/subtitles/{obj_type}/{stream_id}.json")
-def get_subtitles(obj_type: str, stream_id: str, request: Request):
+@app.get("/subtitles/{obj_type}/{stream_id}/{extra:path}")
+def get_subtitles(obj_type: str, stream_id: str, request: Request, extra: str = ""):
     try:
         os_url = f"https://opensubtitles-v3.strem.io/subtitles/{obj_type}/{stream_id}.json"
         response = requests.get(os_url, timeout=5)
