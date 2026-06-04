@@ -8,17 +8,19 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.1.1",
-    "name": "וואן פיס - תרגום לעברית (אולטימטיבי)",
-    "description": "גרסה 1.1.1: מעבר לשרתי ElfHosted הפעילים עבור חילוץ כתוביות MKV של אנימה",
+    "version": "1.1.2",
+    "name": "וואן פיס - תרגום לעברית (God Mode)",
+    "description": "גרסה 1.1.2: חיפוש כתוביות אגרסיבי בכל מאגרי הקהילה (OpenSubtitles v2/v3, AnimeTosho, MSubtitles)",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
 
-# רשימת ספקי הכתוביות המעודכנת
+# ארטילריה כבדה: כל ספקי הכתוביות האפשריים
 PROVIDERS = [
-    "https://opensubtitles-v3.strem.io",      # ספק 1: סדרות וסרטים רגילים 
-    "https://animetosho.elfhosted.com"        # ספק 2: הכתובת החדשה והפעילה לחילוץ MKV!
+    "https://opensubtitles-v3.strem.io",      # ספק 1: OpenSubtitles החדש
+    "https://opensubtitles.strem.io",         # ספק 2: OpenSubtitles הקלאסי
+    "https://animetosho.elfhosted.com",       # ספק 3: מאגר האנימה הגדול 
+    "https://m-subtitles.strem.fun"           # ספק 4: מאגר חלופי מצוין שאוסף כתוביות רשת
 ]
 
 @app.get("/manifest.json")
@@ -31,15 +33,14 @@ def get_subtitles(request: Request):
         raw_path = request.scope.get("raw_path", b"").decode("utf-8")
         english_sub_url = None
         
-        # לולאה שרצה על ספקי הכתוביות
         for provider in PROVIDERS:
             os_url = f"{provider}{raw_path}"
             print(f"DEBUG: Trying provider -> {os_url}")
             
             try:
                 headers = {"User-Agent": "Stremio/4.4"}
-                # Timeout של 8 שניות כדי לא להיתקע יותר מדי על ספק שלא מגיב
-                response = requests.get(os_url, headers=headers, timeout=8)
+                # מחכים קצת פחות (6 שניות) כדי שהטלוויזיה לא תתייאש מהחיפוש הארוך
+                response = requests.get(os_url, headers=headers, timeout=6)
                 
                 if response.status_code == 200:
                     data = response.json()
