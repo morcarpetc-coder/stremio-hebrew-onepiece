@@ -9,9 +9,9 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "name": "וואן פיס - תרגום לעברית",
-    "description": "גרסה 1.0.6: תיקון קידוד שפה גלובלי (iw) - עברית עובדת!",
+    "description": "גרסה 1.0.7: מערכת דיבאגינג מתקדמת ואכיפת אבטחת HTTPS",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -26,48 +26,65 @@ def get_subtitles(request: Request):
         raw_path = request.scope.get("raw_path", b"").decode("utf-8")
         os_url = f"https://opensubtitles-v3.strem.io{raw_path}"
         
+        print(f"DEBUG: Requesting from OpenSubtitles -> {os_url}")
+        
         headers = {"User-Agent": "Stremio/4.4"}
         response = requests.get(os_url, headers=headers, timeout=10)
         
         if response.status_code != 200:
+            print(f"DEBUG: OpenSubtitles returned error {response.status_code}")
             return {"subtitles": []}
             
         data = response.json()
         subtitles_list = data.get("subtitles", [])
+        print(f"DEBUG: Found {len(subtitles_list)} total subtitles from OpenSubtitles")
         
         english_sub_url = None
         
+        # חיפוש מורחב לאנגלית (גם eng וגם en)
         for sub in subtitles_list:
-            if sub.get("lang") == "eng":
+            lang = sub.get("lang", "").lower()
+            if lang == "eng" or lang == "en":
                 english_sub_url = sub.get("url")
+                print(f"DEBUG: Found English subtitle! URL: {english_sub_url}")
                 break
         
         if not english_sub_url:
+            print("DEBUG: No English subtitle found for this video. Cannot translate.")
             return {"subtitles": []}
             
         encoded_url = requests.utils.quote(english_sub_url)
-        base_url = str(request.base_url).rstrip('/')
         
+        # תיקון קריטי: אכיפת HTTPS כדי שסטרימיו לא יחסום את הלינק
+        base_url = str(request.base_url).rstrip('/')
+        if base_url.startswith("http://") and "onrender.com" in base_url:
+            base_url = base_url.replace("http://", "https://")
+            
         stream_id = "auto"
         if "tt" in raw_path:
             stream_id = "series"
         elif "kitsu" in raw_path:
             stream_id = "anime"
         
+        final_url = f"{base_url}/translate-srt?url={encoded_url}"
+        print(f"DEBUG: Sending back to Stremio -> {final_url}")
+        
         return {
             "subtitles": [
                 {
                     "id": f"heb_{stream_id}",
-                    "url": f"{base_url}/translate-srt?url={encoded_url}",
+                    "url": final_url,
                     "lang": "heb"
                 }
             ]
         }
-    except Exception:
+    except Exception as e:
+        print(f"DEBUG: Server crashed in get_subtitles: {e}")
         return {"subtitles": []}
 
 @app.get("/translate-srt")
 def translate_srt(url: str):
+    print(f"DEBUG: Stremio requested translation for -> {url}")
     original_srt_text = ""
     try:
         clean_url = urllib.parse.unquote(url)
@@ -76,16 +93,18 @@ def translate_srt(url: str):
         srt_response.encoding = 'utf-8' 
         original_srt_text = srt_response.text
         
+        print("DEBUG: Downloaded original SRT. Starting translation to Hebrew...")
         translated_text = translate_srt_content(original_srt_text)
+        print("DEBUG: Translation finished successfully!")
+        
         return Response(content=translated_text, media_type="text/srt; charset=utf-8")
     except Exception as e:
-        print(f"Translation logic crashed: {e}")
+        print(f"DEBUG: Translation logic crashed: {e}")
         if original_srt_text:
             return Response(content=original_srt_text, media_type="text/srt; charset=utf-8")
         return Response(content="1\n00:00:01,000 --> 00:00:05,000\n[System Error: Subtitles Unavailable]", media_type="text/srt; charset=utf-8")
 
 def translate_srt_content(srt_text):
-    # התיקון הקריטי כאן: iw במקום he
     translator = GoogleTranslator(source='en', target='iw')
     lines = srt_text.splitlines()
     
