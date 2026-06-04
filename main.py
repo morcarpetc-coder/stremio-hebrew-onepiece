@@ -7,9 +7,9 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "name": "וואן פיס - תרגום לעברית",
-    "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית",
+    "description": "מתרגם אוטומטית - גרסה מתקדמת הכוללת תיקון קידוד גולמי (Raw Path) לאנימה ולסדרות רגילות",
     "resources": ["subtitles"],
     "types": ["series", "movie", "anime", "other"]
 }
@@ -18,20 +18,29 @@ MANIFEST = {
 def get_manifest():
     return MANIFEST
 
-# כאן אנחנו תופסים את כל הנתיב הארוך שסטרימיו שולח במכה אחת
-@app.get("/subtitles/{rest_of_path:path}")
-def get_subtitles(rest_of_path: str, request: Request):
+# תופס כל בקשת כתוביות, לא משנה מה אורכה
+@app.get("/subtitles/{path:path}")
+def get_subtitles(request: Request):
     try:
-        # אנחנו לוקחים את הנתיב המדויק (כולל ה-Hash והשם) ומעבירים למאגר
-        full_path = request.url.path
-        os_url = f"https://opensubtitles-v3.strem.io{full_path}"
+        # פריצת הדרך: שאיבת הכתובת הגולמית בדיוק כפי שסטרימיו שלח, ללא פענוח אוטומטי של התווים
+        raw_path = request.scope.get("raw_path", b"").decode("utf-8")
         
-        response = requests.get(os_url, timeout=5)
+        # הרכבת הכתובת להעברה למאגר הרשמי של סטרימיו
+        os_url = f"https://opensubtitles-v3.strem.io{raw_path}"
+        
+        # הוספת זהות של סטרימיו כדי למנוע חסימת בוטים
+        headers = {"User-Agent": "Stremio/4.4"}
+        response = requests.get(os_url, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            return {"subtitles": []}
+            
         data = response.json()
-        
         subtitles_list = data.get("subtitles", [])
+        
         english_sub_url = None
         
+        # חיפוש מקור אנגלי
         for sub in subtitles_list:
             if sub.get("lang") == "eng":
                 english_sub_url = sub.get("url")
@@ -43,26 +52,32 @@ def get_subtitles(rest_of_path: str, request: Request):
         encoded_url = requests.utils.quote(english_sub_url)
         base_url = str(request.base_url).rstrip('/')
         
-        # חילוץ מזהה כדי שסטרימיו לא יתבלבל
-        parts = rest_of_path.split('/')
-        stream_id = parts[1] if len(parts) > 1 else "vid"
+        # חילוץ מזהה פשוט כדי שסטרימיו יציג את הלחצן
+        stream_id = "auto"
+        if "tt" in raw_path:
+            stream_id = "series"
+        elif "kitsu" in raw_path:
+            stream_id = "anime"
         
         return {
             "subtitles": [
                 {
-                    "id": f"heb_auto_{stream_id}",
+                    "id": f"heb_{stream_id}",
                     "url": f"{base_url}/translate-srt?url={encoded_url}",
                     "lang": "heb"
                 }
             ]
         }
-    except Exception:
+    except Exception as e:
+        print(f"Server Error: {e}")
         return {"subtitles": []}
 
 @app.get("/translate-srt")
 def translate_srt(url: str):
     try:
+        # שליפת קובץ ה-SRT וקידוד נכון למונע ג'יבריש
         srt_response = requests.get(url, timeout=10)
+        srt_response.encoding = 'utf-8' 
         srt_text = srt_response.text
         
         translated_text = translate_srt_content(srt_text)
@@ -85,14 +100,16 @@ def translate_srt_content(srt_text):
         text_lines_indices.append(idx)
         text_to_translate.append(line)
     
-    batch_size = 50
+    # הקטנת קבוצות התרגום ל-40 כדי להבטיח יציבות ולא לקרוס מול גוגל
+    batch_size = 40 
     for i in range(0, len(text_to_translate), batch_size):
         batch = text_to_translate[i:i+batch_size]
         try:
             translated_batch = translator.translate_batch(batch)
             for j, translated_text in enumerate(translated_batch):
-                actual_idx = text_lines_indices[i + j]
-                lines[actual_idx] = translated_text
+                if translated_text:
+                    actual_idx = text_lines_indices[i + j]
+                    lines[actual_idx] = translated_text
         except Exception:
             pass
             
