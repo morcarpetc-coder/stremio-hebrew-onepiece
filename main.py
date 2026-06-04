@@ -11,8 +11,8 @@ MANIFEST = {
     "name": "וואן פיס - תרגום לעברית",
     "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית עבור וואן פיס וסדרות אחרות",
     "resources": ["subtitles"],
-    "types": ["series", "movie"],
-    "idPrefixes": ["tt"]
+  "types": ["series", "movie", "anime"],
+    "idPrefixes": ["tt", "kitsu"]
 }
 
 @app.get("/manifest.json")
