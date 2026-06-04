@@ -7,12 +7,11 @@ app = FastAPI()
 
 MANIFEST = {
     "id": "community.onepiece.hebrew.translator",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "name": "וואן פיס - תרגום לעברית",
     "description": "מתרגם אוטומטית כתוביות מאנגלית לעברית עבור וואן פיס וסדרות אחרות",
     "resources": ["subtitles"],
-  "types": ["series", "movie", "anime"],
-    "idPrefixes": ["tt", "kitsu"]
+    "types": ["series", "movie", "anime", "other"]
 }
 
 @app.get("/manifest.json")
